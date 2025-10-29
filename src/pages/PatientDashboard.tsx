@@ -1,33 +1,91 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Activity, Calendar, FileText, Pill, Clock, User } from "lucide-react";
+import { Calendar, FileText, Pill, Clock } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import { useAuth } from "@/contexts/AuthContext";
+import { getPatientByProfileId } from "@/services/patientService";
+import { getAppointmentsByPatient } from "@/services/appointmentService";
+import { getActivePrescriptionsByPatient } from "@/services/prescriptionService";
+import { getMedicalRecordsByPatient } from "@/services/medicalRecordService";
+import { Patient, Appointment, Prescription, MedicalRecord } from "@/types/database";
+import { useNavigate } from "react-router-dom";
+import { decryptField } from "@/lib/encryption";
 
 const PatientDashboard = () => {
-  const [appointments] = useState([
-    { id: 1, doctor: "Dr. Sarah Johnson", date: "2025-11-05", time: "10:00 AM", type: "General Checkup", status: "upcoming" },
-    { id: 2, doctor: "Dr. Michael Chen", date: "2025-10-28", time: "2:30 PM", type: "Follow-up", status: "completed" },
-  ]);
+  const { profile } = useAuth();
+  const navigate = useNavigate();
+  const [patient, setPatient] = useState<Patient | null>(null);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
+  const [recordCount, setRecordCount] = useState(0);
+  const [loading, setLoading] = useState(true);
 
-  const [prescriptions] = useState([
-    { id: 1, medication: "Amoxicillin 500mg", dosage: "3x daily", duration: "7 days", doctor: "Dr. Sarah Johnson" },
-    { id: 2, medication: "Ibuprofen 200mg", dosage: "As needed", duration: "Ongoing", doctor: "Dr. Michael Chen" },
-  ]);
+  useEffect(() => {
+    async function loadDashboardData() {
+      if (!profile) return;
+
+      try {
+        const patientData = await getPatientByProfileId(profile.id);
+        if (!patientData) {
+          setLoading(false);
+          return;
+        }
+
+        setPatient(patientData);
+
+        const [appts, rxs, records] = await Promise.all([
+          getAppointmentsByPatient(patientData.id),
+          getActivePrescriptionsByPatient(patientData.id),
+          getMedicalRecordsByPatient(patientData.id),
+        ]);
+
+        const upcomingAppts = appts.filter(
+          apt => apt.status === 'scheduled' || apt.status === 'confirmed'
+        );
+        setAppointments(upcomingAppts.slice(0, 3));
+        setPrescriptions(rxs.slice(0, 3));
+        setRecordCount(records.length);
+      } catch (error) {
+        console.error('Error loading dashboard:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    loadDashboardData();
+  }, [profile]);
+
+  const lastVisit = appointments.find(apt => apt.status === 'completed');
+  const lastVisitDate = lastVisit
+    ? new Date(lastVisit.appointment_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    : 'N/A';
 
   const stats = [
-    { title: "Upcoming Appointments", value: "2", icon: Calendar, color: "text-blue-500" },
-    { title: "Active Prescriptions", value: "3", icon: Pill, color: "text-green-500" },
-    { title: "Medical Records", value: "12", icon: FileText, color: "text-purple-500" },
-    { title: "Last Visit", value: "Oct 28", icon: Clock, color: "text-orange-500" },
+    { title: "Upcoming Appointments", value: appointments.length.toString(), icon: Calendar, color: "text-blue-500" },
+    { title: "Active Prescriptions", value: prescriptions.length.toString(), icon: Pill, color: "text-green-500" },
+    { title: "Medical Records", value: recordCount.toString(), icon: FileText, color: "text-purple-500" },
+    { title: "Last Visit", value: lastVisitDate, icon: Clock, color: "text-orange-500" },
   ];
+
+  if (loading) {
+    return (
+      <DashboardLayout role="patient">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <p className="text-muted-foreground">Loading dashboard...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout role="patient">
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Welcome back, John</h1>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Welcome back, {profile?.first_name}
+          </h1>
           <p className="text-muted-foreground">Here's an overview of your health information</p>
         </div>
 
@@ -54,24 +112,36 @@ const PatientDashboard = () => {
               <CardDescription>Your scheduled medical appointments</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {appointments.map((apt) => (
-                <div key={apt.id} className="flex items-start justify-between border-b pb-4 last:border-0 last:pb-0">
-                  <div className="space-y-1">
-                    <p className="font-medium">{apt.doctor}</p>
-                    <p className="text-sm text-muted-foreground">{apt.type}</p>
-                    <p className="text-sm flex items-center gap-2">
-                      <Calendar className="h-3 w-3" />
-                      {apt.date} at {apt.time}
-                    </p>
+              {appointments.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No upcoming appointments
+                </p>
+              ) : (
+                appointments.map((apt) => (
+                  <div key={apt.id} className="flex items-start justify-between border-b pb-4 last:border-0 last:pb-0">
+                    <div className="space-y-1">
+                      <p className="font-medium">
+                        Dr. {apt.doctor?.profile?.first_name} {apt.doctor?.profile?.last_name}
+                      </p>
+                      <p className="text-sm text-muted-foreground">{apt.appointment_type}</p>
+                      <p className="text-sm flex items-center gap-2">
+                        <Calendar className="h-3 w-3" />
+                        {new Date(apt.appointment_date).toLocaleDateString()} at {apt.start_time}
+                      </p>
+                    </div>
+                    <Badge variant={apt.status === "scheduled" || apt.status === "confirmed" ? "default" : "secondary"}>
+                      {apt.status}
+                    </Badge>
                   </div>
-                  <Badge variant={apt.status === "upcoming" ? "default" : "secondary"}>
-                    {apt.status}
-                  </Badge>
-                </div>
-              ))}
-              <Button className="w-full mt-4" variant="outline">
+                ))
+              )}
+              <Button
+                className="w-full mt-4"
+                variant="outline"
+                onClick={() => navigate('/patient/appointments')}
+              >
                 <Calendar className="h-4 w-4 mr-2" />
-                Schedule New Appointment
+                View All Appointments
               </Button>
             </CardContent>
           </Card>
@@ -82,20 +152,30 @@ const PatientDashboard = () => {
               <CardDescription>Current medications and dosage information</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {prescriptions.map((rx) => (
-                <div key={rx.id} className="border-b pb-4 last:border-0 last:pb-0">
-                  <div className="flex items-start justify-between mb-2">
-                    <p className="font-medium">{rx.medication}</p>
-                    <Pill className="h-4 w-4 text-muted-foreground" />
+              {prescriptions.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No active prescriptions
+                </p>
+              ) : (
+                prescriptions.map((rx) => (
+                  <div key={rx.id} className="border-b pb-4 last:border-0 last:pb-0">
+                    <div className="flex items-start justify-between mb-2">
+                      <p className="font-medium">Prescription</p>
+                      <Pill className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                    <div className="space-y-1 text-sm text-muted-foreground">
+                      <p>Duration: {rx.duration}</p>
+                      <p>Prescribed by: Dr. {rx.doctor?.profile?.first_name} {rx.doctor?.profile?.last_name}</p>
+                      <p className="text-xs">Prescribed: {new Date(rx.prescribed_date).toLocaleDateString()}</p>
+                    </div>
                   </div>
-                  <div className="space-y-1 text-sm text-muted-foreground">
-                    <p>Dosage: {rx.dosage}</p>
-                    <p>Duration: {rx.duration}</p>
-                    <p>Prescribed by: {rx.doctor}</p>
-                  </div>
-                </div>
-              ))}
-              <Button className="w-full mt-4" variant="outline">
+                ))
+              )}
+              <Button
+                className="w-full mt-4"
+                variant="outline"
+                onClick={() => navigate('/patient/prescriptions')}
+              >
                 <FileText className="h-4 w-4 mr-2" />
                 View All Prescriptions
               </Button>
@@ -112,15 +192,23 @@ const PatientDashboard = () => {
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">Blood Type</p>
-                <p className="text-lg font-semibold">O+</p>
+                <p className="text-lg font-semibold">{patient?.blood_group || 'Not specified'}</p>
               </div>
               <div className="space-y-2">
                 <p className="text-sm text-muted-foreground">Allergies</p>
-                <p className="text-lg font-semibold">Penicillin</p>
+                <p className="text-lg font-semibold">
+                  {patient?.allergies && patient.allergies.length > 0
+                    ? patient.allergies.join(', ')
+                    : 'None recorded'}
+                </p>
               </div>
               <div className="space-y-2">
-                <p className="text-sm text-muted-foreground">Emergency Contact</p>
-                <p className="text-lg font-semibold">+1 234-567-8900</p>
+                <p className="text-sm text-muted-foreground">Chronic Conditions</p>
+                <p className="text-lg font-semibold">
+                  {patient?.chronic_conditions && patient.chronic_conditions.length > 0
+                    ? patient.chronic_conditions.join(', ')
+                    : 'None recorded'}
+                </p>
               </div>
             </div>
           </CardContent>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -6,30 +6,48 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Activity } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Login = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { signIn, user, profile } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [isLogin, setIsLogin] = useState(true);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (user && profile) {
+      const roleRoutes: Record<string, string> = {
+        patient: '/patient',
+        doctor: '/doctor',
+        admin: '/admin',
+        nurse: '/doctor',
+        receptionist: '/admin',
+      };
+      navigate(roleRoutes[profile.role] || '/');
+    }
+  }, [user, profile, navigate]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Mock authentication - in production, this would call your backend
-    toast({
-      title: isLogin ? "Login Successful" : "Registration Successful",
-      description: "Redirecting to dashboard...",
-    });
-    
-    // Simulate different user roles
-    const role = email.includes("doctor") ? "doctor" : email.includes("admin") ? "admin" : "patient";
-    localStorage.setItem("userRole", role);
-    
-    setTimeout(() => {
-      navigate(`/${role}`);
-    }, 1000);
+    setIsLoading(true);
+
+    try {
+      await signIn(email, password);
+      toast({
+        title: "Login Successful",
+        description: "Redirecting to dashboard...",
+      });
+    } catch (error: any) {
+      toast({
+        title: "Login Failed",
+        description: error.message || "Invalid email or password",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -58,9 +76,6 @@ const Login = () => {
                 onChange={(e) => setEmail(e.target.value)}
                 required
               />
-              <p className="text-xs text-muted-foreground">
-                Use: patient@demo.com, doctor@demo.com, or admin@demo.com
-              </p>
             </div>
             <div className="space-y-2">
               <Label htmlFor="password">Password</Label>
@@ -72,19 +87,10 @@ const Login = () => {
                 required
               />
             </div>
-            <Button type="submit" className="w-full">
-              {isLogin ? "Sign In" : "Sign Up"}
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? "Signing In..." : "Sign In"}
             </Button>
           </form>
-          <div className="mt-4 text-center text-sm">
-            <button
-              type="button"
-              onClick={() => setIsLogin(!isLogin)}
-              className="text-primary hover:underline"
-            >
-              {isLogin ? "Need an account? Sign up" : "Already have an account? Sign in"}
-            </button>
-          </div>
         </CardContent>
       </Card>
     </div>

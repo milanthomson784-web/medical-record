@@ -3,6 +3,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { AuthProvider, RequireAuth } from "./contexts/AuthContext";
 import Index from "./pages/Index";
 import Login from "./pages/Login";
 import PatientDashboard from "./pages/PatientDashboard";
@@ -21,18 +22,19 @@ const App = () => (
       <Toaster />
       <Sonner />
       <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<Index />} />
-          <Route path="/login" element={<Login />} />
-          <Route path="/patient" element={<PatientDashboard />} />
-          <Route path="/patient/appointments" element={<PatientAppointments />} />
-          <Route path="/patient/prescriptions" element={<PatientPrescriptions />} />
-          <Route path="/patient/records" element={<PatientRecords />} />
-          <Route path="/doctor" element={<DoctorDashboard />} />
-          <Route path="/admin" element={<AdminDashboard />} />
-          {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
-          <Route path="*" element={<NotFound />} />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/" element={<Index />} />
+            <Route path="/login" element={<Login />} />
+            <Route path="/patient" element={<RequireAuth allowedRoles={['patient']}><PatientDashboard /></RequireAuth>} />
+            <Route path="/patient/appointments" element={<RequireAuth allowedRoles={['patient']}><PatientAppointments /></RequireAuth>} />
+            <Route path="/patient/prescriptions" element={<RequireAuth allowedRoles={['patient']}><PatientPrescriptions /></RequireAuth>} />
+            <Route path="/patient/records" element={<RequireAuth allowedRoles={['patient']}><PatientRecords /></RequireAuth>} />
+            <Route path="/doctor" element={<RequireAuth allowedRoles={['doctor']}><DoctorDashboard /></RequireAuth>} />
+            <Route path="/admin" element={<RequireAuth allowedRoles={['admin']}><AdminDashboard /></RequireAuth>} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
