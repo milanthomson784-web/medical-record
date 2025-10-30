@@ -61,7 +61,7 @@ const Login = () => {
           </div>
           <CardTitle className="text-2xl font-bold">MedRecord System</CardTitle>
           <CardDescription>
-            {isLogin ? "Sign in to access your account" : "Create a new account"}
+            Sign in to access your account
           </CardDescription>
         </CardHeader>
         <CardContent>
